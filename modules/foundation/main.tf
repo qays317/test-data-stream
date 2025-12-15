@@ -31,18 +31,6 @@ resource "aws_internet_gateway" "igw" {
     tags = { Name = "Kinesis-IGW" }
 }
 
-resource "aws_eip" "nat_gateway_eip" {
-    domain = "vpc"
-    tags = { Name = "NAT-gateway-eip" }
-}
-
-resource "aws_nat_gateway" "nat_gateway" {
-    allocation_id = aws_eip.nat_gateway_eip.id
-    subnet_id = aws_subnet.main[var.nat_gateway_subnet_name].id
-    depends_on = [aws_internet_gateway.igw]
-    tags = { Name = "NAT-gateway" }
-}
-
 
 //==================================================================================================================================================
 //                                                                       Route Tables
@@ -50,14 +38,9 @@ resource "aws_nat_gateway" "nat_gateway" {
 
 locals {
   route_tables = {
-    private = {
-      vpc_endpoint_id = one(one(aws_networkfirewall_firewall.network_firewall.firewall_status).sync_states).attachment[0].endpoint_id
-    }
+    private = {}
     public = {
       gateway_id = aws_internet_gateway.igw.id
-    }
-    firewall = {
-      nat_gateway_id = aws_nat_gateway.nat_gateway.id
     }
   }
 }
@@ -67,89 +50,19 @@ resource "aws_route_table" "main" {
     vpc_id = aws_vpc.vpc.id
     
     route {
-        cidr_block = "0.0.0.0/0"
-        vpc_endpoint_id = lookup(each.value, "vpc_endpoint_id", null)
-        gateway_id = lookup(each.value, "gateway_id", null)
-        nat_gateway_id = lookup(each.value, "nat_gateway_id", null)
+      cidr_block = "0.0.0.0/0"
+      gateway_id = lookup(each.value, "gateway_id", null)
     }
     
     tags = { Name = "${each.key}-route-table" }
 }
 
-# NAT Gateway subnet gets direct IGW access
-resource "aws_route_table_association" "nat_gateway_route_table_association" {
-    subnet_id = aws_subnet.main[var.nat_gateway_subnet_name].id
-    route_table_id = aws_route_table.main["public"].id
-}
-
-# Firewall subnet routes to NAT Gateway
-resource "aws_route_table_association" "firewall_route_table_association" {
-    subnet_id = aws_subnet.main[var.networkfirewall_subnet_name].id
-    route_table_id = aws_route_table.main["firewall"].id
-}
-
 resource "aws_route_table_association" "private_route_table_associations" {
     for_each = {
-        for k, v in aws_subnet.main : k => v
-        if v.map_public_ip_on_launch == false && k != var.networkfirewall_subnet_name
+      for k, v in aws_subnet.main : k => v
     }
-        subnet_id = each.value.id
-        route_table_id = aws_route_table.main["private"].id
-}
-
-
-//==================================================================================================================================================
-//                                                                     Network Firewall
-//==================================================================================================================================================
-
-resource "aws_networkfirewall_rule_group" "docker_hub_whitelisted" {
-    capacity = 100
-    name = "docker-hub-whitelisted"
-    type = "STATEFUL"
-
-    rule_group {
-      rules_source {
-        rules_source_list {
-          generated_rules_type = "ALLOWLIST"
-          target_types = ["TLS_SNI", "HTTP_HOST"]
-          targets = [
-            "registry-1.docker.io",
-            "auth.docker.io", 
-            "production.cloudflare.docker.com",
-            "index.docker.io",
-            "docker.io",
-            "registry.docker.io"
-          ]
-        }
-      }
-    }
-  
-}
-
-resource "aws_networkfirewall_firewall_policy" "firewall_policy" {
-  name = "kinesis-firewall-policy"
-  
-  firewall_policy {
-    stateful_rule_group_reference {
-      resource_arn = aws_networkfirewall_rule_group.docker_hub_whitelisted.arn
-    }
-    
-    stateless_default_actions = ["aws:forward_to_sfe"]          # Forward to Stateful firewall engine
-    stateless_fragment_default_actions = ["aws:forward_to_sfe"] # Forward fragmented packets to Stateful engine
-  }
-}
-
-resource "aws_networkfirewall_firewall" "network_firewall" {
-    name = "kinesis-network-firewall"
-    firewall_policy_arn = aws_networkfirewall_firewall_policy.firewall_policy.arn
-    vpc_id = aws_vpc.vpc.id
-
-    subnet_mapping {
-      subnet_id = aws_subnet.main[var.networkfirewall_subnet_name].id
-    }
-
-    tags = { Name = "kinesis-network-firewall" }
-  
+      subnet_id = each.value.id
+      route_table_id = each.value.map_public_ip_on_launch == true ? aws_route_table.main["private"].id : aws_route_table.main["private"].id
 }
 
 

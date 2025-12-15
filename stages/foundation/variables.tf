@@ -10,14 +10,6 @@ variable "subnet_config" {
     }))
 }
 
-variable "nat_gateway_subnet_name_config" {
-    type = string
-}
-
-variable "networkfirewall_subnet_name_config" {
-    type = string
-}
-
 variable "endpoint_config" {
     type = map(object({
         vpc_endpoint_type = string
