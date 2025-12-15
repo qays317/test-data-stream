@@ -30,4 +30,5 @@ module "producer" {
     ecs_security_group_name = var.ecs_security_group_name
     ecs_service = var.ecs_service_config
     ecr_image_uri = var.ecr_image_uri
+    vpc_endpoint_sg_id = data.terraform_remote_state.foundation_state.outputs.vpc_endpoint_sg_id
 }

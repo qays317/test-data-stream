@@ -31,9 +31,22 @@ variable "ecs_security_group_name" {
 }
 
 variable "ecs_service" {
+  type = object({
+    name = string
+    desired_count = number
+    launch_type   = string
+  })
+}
+
+/*
+variable "ecs_service" {
   type = map(object({
     desired_count = number
     launch_type = string
   }))
 }
+*/
 
+variable "vpc_endpoint_sg_id" {
+  type = string
+}

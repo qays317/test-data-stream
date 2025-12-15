@@ -3,35 +3,34 @@
 ┌─────────────────────────────────────────────┐
 │                 foundation                  │
 │  OUTPUTS:                                   │
-|   • vpc_id ─────────────────────────────────┼─────▶ used by 3-producers, 
-│   • ecs_subnets_ids ────────────────────────┼─────▶ used by 3-producers, 
+|   • vpc_id ─────────────────────────────────┼─────▶ used by producers, 
+│   • ecs_subnets_ids ────────────────────────┼─────▶ used by producers,
+|   • vpc_endpoint_sg_id ─────────────────────┼─────▶ used by producers,                      
 └─────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────┐
 │                 data-streaming              │
 |  INPUTS:                                    |
 |   • s3_bucket_name                          |
 │  OUTPUTS:                                   │
-|   • kinesis_stream_arn ─────────────────────┼─────▶ used by 3-producers, 
-│   • kinesis_stream_name ────────────────────┼─────▶ used by 3-producers,
-│   • kinesis_s3_bucket_id ───────────────────┼─────▶ used by 
+|   • kinesis_stream_arn ─────────────────────┼─────▶ used by producers, consumers
+│   • kinesis_stream_name ────────────────────┼─────▶ used by producers,
+│   • kinesis_s3_bucket_id ───────────────────┼─────▶ used by consumers
 └─────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────┐
 │                 producers                   │
 |  INPUTS:                                    |
 |   • kinesis_stream_arn                      |
+|   • ecr_image_uri                           |
 |   • kinesis_stream_name                     |
 |   • vpc_id                                  |
-|   • ecs_subnets_ids                         |       
+|   • ecs_subnets_ids                         |
+|   • vpc_endpoint_sg_id                      |     
 └─────────────────────────────────────────────┘
-
-
-
-
 ┌─────────────────────────────────────────────┐
-│                 4-consumers                 │
+│                 consumers                   │
 |  INPUTS:                                    |
-|   • s3_bucket_name                          |
-|   • cloudfront_distribution_arn             |
+|   • kinesis_stream_arn                      |
+|   • s3_bucket_id                            |
 |   • s3_vpc_endpoint_id                      |
 |   • ecs_task_role_arn                       |
 │  OUTPUTS:                                   │
@@ -39,6 +38,14 @@
 │   • bucket_regional_domain_name ────────────┼─────▶ used by global/cdn_dns
 |   • bucket_arn ─────────────────────────────┼─────▶ used by dr/s3 
 └─────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
 ┌─────────────────────────────────────────────┐
 │                 primary/alb                 │
 |  INPUTS:                                    |
