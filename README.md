@@ -5,45 +5,19 @@ The project demonstrates event-driven processing, serverless analytics, secure n
 
 ---
 
-## Prerequisites
-
-- AWS CLI configured with sufficient permissions
-
-- Terraform v1.5.0 or later
-
-- Docker (for image promotion to ECR)
-
-- Bash environment (Linux / macOS / WSL)
-
----
-
-## Required AWS services access:
-
-- VPC, EC2, ECS, ECR
-
-- Kinesis Data Streams & Firehose
-
-- Lambda, DynamoDB
-
-- S3, Glue, Athena
-
-- IAM
-
----
-
 ## Architecture Overview
 
 Infrastructure Stages
 
-1. Foundation
+1. **Foundation**
 
     - VPC with private subnets
 
-    - Internet Gateway
+    - Internet Gateway (control-plane access only)
 
     - VPC Interface & Gateway Endpoints (ECR, S3, Logs, etc.)
 
-2. Data Streaming
+2. **Data Streaming**
 
     - Kinesis Data Stream (real-time ingestion)
 
@@ -51,7 +25,7 @@ Infrastructure Stages
 
     - S3 data lake bucket (raw streaming data + trading signals)    
 
-3. Producers (Simulated Producer Application)
+3. **Producers (Simulated Producer Application)**
 
     - ECS Fargate service
 
@@ -61,7 +35,7 @@ Infrastructure Stages
 
     - No runtime internet access
 
-4. Consumers
+4. **Consumers**
 
     - Lambda function triggered by Kinesis
 
@@ -71,7 +45,7 @@ Infrastructure Stages
 
     - Archives completed trades to S3
 
-5. Analytics
+5. **Analytics**
 
     - AWS Glue Data Catalog
 
@@ -79,7 +53,7 @@ Infrastructure Stages
 
     - Amazon Athena for SQL analytics
 
-    - Dedicated S3 bucket for Athena query results\
+    - Dedicated S3 bucket for Athena query results
 
 --- 
 
@@ -111,12 +85,297 @@ Infrastructure Stages
         └── stacks_config.sh
 
 ```
+---
+
+## Prerequisites (Applies to Both Local & CI/CD)
+AWS
+
+✔ AWS account with permissions to create:
+
+IAM (roles, policies, OIDC provider)
+
+VPC, Subnets, Route Tables, VPC Endpoints
+
+ECS (Fargate), ECR
+
+Kinesis Data Streams & Firehose
+
+Lambda, DynamoDB
+
+S3, Glue, Athena
+
+Tools
+
+✔ Terraform ≥ 1.5
+✔ AWS CLI
+✔ Bash shell
+
+Additional
+
+✔ Docker
+(used only to promote the producer image from Docker Hub to ECR)
 
 ---
 
-## Deployment
+## Deployment Options
 
-### Local Deployment
+You can deploy this project in two ways:
+
+- CI/CD Deployment (recommended)
+
+- Local Deployment (optional)
+
+---
+
+## CI/CD Deployment (Recommended)
+
+This setup uses GitHub Actions + AWS OIDC and follows modern industry standards.
+
+Key Characteristics
+
+- No AWS access keys stored in GitHub
+
+- No long-lived credentials
+
+- Secure, short-lived STS credentials via OIDC
+
+- No manual Terraform commands after bootstrap
+
+
+🚀 1. Clone the Project
+
+No fork is required:
+```bash
+git clone https://github.com/QaysAlnajjad/aws-realtime-trading-pipeline.git
+cd aws-realtime-trading-pipeline
+```
+
+🟦 2. Deploy the Bootstrap Stack (ONE TIME ONLY)
+
+The bootstrap stage enables GitHub Actions → AWS IAM authentication using OIDC.
+
+This allows GitHub to deploy infrastructure without storing any AWS credentials.
+
+✔ What the bootstrap stage creates
+Resource	Purpose
+AWS IAM OpenID Connect Provider (GitHub)	Allows GitHub Actions to authenticate to AWS
+GitHub Actions IAM Role	Assumed by deploy / destroy workflows
+Strict trust policy	Restricted to this repository only
+
+⚠️ This stage is executed once per AWS account.
+
+⚠️ IMPORTANT — Update Repository Name Before Running Bootstrap
+
+The IAM trust policy is locked to a single GitHub repository.
+
+If you cloned this project into your own GitHub account, you must update the repository reference.
+
+Open:
+```bash
+stages/0-bootstrap/main.tf
+```
+
+Find:
+```bash
+"token.actions.githubusercontent.com:sub" = "repo:<usename>/<repo-name>:*"
+```
+
+Replace with your repository path:
+```bash
+repo:<your-github-username>/<repository-name>
+```
+
+If you skip this step, GitHub Actions will fail with:
+```bash
+Not authorized to assume role
+```
+
+Step 2.1 — Authenticate to AWS locally (temporary)
+
+This is required only for bootstrap.
+
+Either:
+```bash
+aws configure
+```
+
+Or:
+```bash
+export AWS_ACCESS_KEY_ID=xxxx
+export AWS_SECRET_ACCESS_KEY=xxxx
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+Step 2.2 — Deploy the Bootstrap Stack
+```bash
+terraform -chdir=stages/0-bootstrap init
+terraform -chdir=stages/0-bootstrap apply
+```
+
+Terraform will output:
+```bash
+github_actions_role_arn = arn:aws:iam::<ACCOUNT-ID>:role/github-actions-terraform-data-streaming-role
+```
+
+🟩 3. Configure GitHub Actions (NO SECRETS REQUIRED)
+
+You do not need to add AWS keys or secrets to GitHub.
+
+Open:
+```bash
+.github/workflows/deploy.yml
+.github/workflows/destroy.yml
+```
+
+Find:
+```bash
+role-to-assume: arn:aws:iam::<ACCOUNT-ID>:role/github-actions-terraform-data-streaming-role
+```
+
+Replace <ACCOUNT-ID> with your AWS account ID.
+
+✔ No secrets
+✔ No PAT tokens
+✔ No long-lived credentials
+✔ Secure, short-lived STS credentials via OIDC
+
+🟧 4. Configure Deployment Parameters
+
+Open:
+```bash
+scripts/deployment-automation-scripts/config.sh
+```
+
+Edit the values to match your environment:
+
+| Variable                          | Purpose                                              |
+|-----------------------------------|------------------------------------------------------|
+| AWS_REGION                        | AWS region for the deployment (e.g., us-east-1)      | 
+| TF_STATE_BUCKET_NAME              | S3 bucket used for ALL Terraform remote state        |
+| TF_STATE_BUCKET_REGION            | Region of the Terraform state bucket                 | 
+| DATA_STREAM_S3_BUCKET_NAME        | S3 bucket for Firehose data                          |
+| ATHENA_RESULTS_S3_BUCKET_NAME     | S3 bucket for Athena query results                   |
+| ECR_REPO_NAME                     | ECR repository for producer image                    |
+
+
+🐳 5. Docker Image Promotion (Automated)
+
+This project uses Amazon ECR, not Docker Hub, at runtime.
+
+During deployment, the pipeline automatically:
+
+1. Pulls the producer image from Docker Hub
+
+2. Pushes it to Amazon ECR
+
+3. Stores the final ECR image URI in:
+```bash
+scripts/runtime/producer-ecr-image-uri
+```
+
+4. Injects that URI into the ECS task definition
+
+You do not need to manually manage image tags.
+
+🚀 6. Deploy the Full Infrastructure
+
+From GitHub → Actions:
+
+1. Select Deploy Trading Pipeline
+
+2. Click Run workflow
+
+3. Choose the target branch
+
+GitHub Actions will automatically:
+
+✔ Assume the IAM role
+✔ Initialize Terraform backends
+✔ Deploy stages in dependency order
+✔ Promote Docker image → ECR
+✔ Deploy ECS producers
+✔ Deploy Kinesis, Lambda, DynamoDB
+✔ Start the Glue crawler automatically
+
+⏱ Typical deployment time: 10–15 minutes
+
+🔍 7. Validate the Deployment
+Real-Time Path
+```bash
+ECS Producer
+ → Kinesis Data Stream
+ → Lambda Consumer
+ → DynamoDB
+ → S3 completed-trades/
+```
+```bash
+Batch Analytics Path
+Kinesis Stream
+ → Firehose
+ → S3 raw-data/
+ → Glue Crawler
+ → Glue Data Catalog
+ → Athena
+```
+Check Glue Crawler
+```bash
+aws glue get-crawler \
+  --name <crawler-name> \
+  --query Crawler.State
+```
+
+Wait until the state is READY.
+
+Query with Athena
+```bash
+SHOW TABLES;
+
+SELECT symbol, AVG(price) AS avg_price, COUNT(*) AS trades
+FROM raw_data
+GROUP BY symbol;
+```
+
+💣 8. Destroy the Infrastructure
+
+From GitHub → Actions:
+
+1. Select Destroy Trading Pipeline
+
+2. Click Run workflow
+
+The destroy workflow:
+
+✔ Destroys stacks in correct dependency order
+✔ Cleans up ECS services and Lambda
+✔ Deletes DynamoDB tables
+✔ Empties S3 buckets
+✔ Deletes ECR images and repository
+✔ Removes runtime artifacts
+
+This guarantees no orphaned resources.
+
+🧠 Why This Setup Matters
+
+This project demonstrates real production patterns:
+
+Secure CI/CD using OIDC (no secrets)
+
+Bootstrap stage separation
+
+Private, endpoint-only workloads
+
+Immutable infrastructure
+
+Clean teardown and cost safety
+
+A reviewer can deploy and destroy this system confidently and safely, exactly as they would in a real AWS environment.
+
+---
+
+## Local Deployment (optional)
+Local deployment is provided for development and experimentation.  
+The recommended approach is CI/CD via GitHub Actions.
+
 ```bash
 # Deploy the entire pipeline
 ./scripts/deployment-automation-scripts/deploy.sh
@@ -125,56 +384,6 @@ Infrastructure Stages
 ./scripts/deployment-automation-scripts/destroy.sh
 
 ```
-
-The deployment script:
-
-- Bootstraps Terraform backend (S3 state bucket)
-
-- Deploys stages in the correct order
-
-- Promotes the Docker image from DockerHub to ECR
-
-- Injects the ECR image URI into the ECS producer stage
-
-- Starts the Glue crawler automatically
-
-### CI/CD Deployment
-
-- Test branch: automatic validation
-
-- Main branch: manual deployment via GitHub Actions
-
-Steps:
-
-- GitHub → Actions
-
-- Select Deploy Trading Pipeline
-
-- Click Run workflow
-
-- Choose the target branch
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
----
 
 ## Data Flow
 

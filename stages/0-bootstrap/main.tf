@@ -30,7 +30,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 # 2. GitHub Actions IAM Role
 # -------------------------------
 resource "aws_iam_role" "github_actions" {
-  name = "github-actions-terraform-role"
+  name = "github-actions-terraform-data-streaming-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -59,6 +59,6 @@ resource "aws_iam_role" "github_actions" {
 # 3. Attach Admin Access
 # -------------------------------
 resource "aws_iam_role_policy_attachment" "admin_policy" {
-  role       = aws_iam_role.github_actions.name
+  role = aws_iam_role.github_actions.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
