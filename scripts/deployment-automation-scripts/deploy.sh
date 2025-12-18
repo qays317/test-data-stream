@@ -60,17 +60,4 @@ deploy_stack "consumers"
 deploy_stack "analytics"
 
 
-# Start Glue Crawler to discover S3 data
-echo "🔍 Starting Glue crawler to discover trading data..."
-CRAWLER_NAME=$(cd stages/analytics && terraform output -raw glue_crawler_name)
-aws glue start-crawler --name "$CRAWLER_NAME"
-echo "⏳ Crawler '$CRAWLER_NAME' started. It will run in background to create table schemas."
-
 echo "✅ Deployment Complete!"
-echo "🔍 Check AWS Console:"
-echo "   - ECS: Producer tasks running"
-echo "   - Kinesis: Data stream receiving records"
-echo "   - Lambda: Consumer processing records"
-echo "   - DynamoDB: Trading positions stored"
-echo "   - Glue: Data catalog and crawler ready"
-echo "   - Athena: Query workgroup configured"

@@ -59,18 +59,8 @@ destroy_stack() {
 
 # Empty S3 buckets before destruction
 echo "🗑️  Emptying S3 buckets..."
-aws s3 rm s3://$DATA_STREAM_S3_BUCKET_NAME --recursive --quiet || echo "Data bucket already empty or doesn't exist"
+aws s3 rm s3://$DATA_STREAM_S3_BUCKET_NAME --recursive --quiet || echo "Data Stream bucket already empty or doesn't exist"
 aws s3 rm s3://$ATHENA_RESULTS_BUCKET_NAME --recursive --quiet || echo "Athena results bucket already empty or doesn't exist"
-
-
-
-if [[ -f "scripts/runtime/producer-ecr-image-uri" ]]; then
-  ECR_IMAGE_URI=$(cat scripts/runtime/producer-ecr-image-uri)
-  STACK_VARS["producers"]+=" -var ecr_image_uri=$ECR_IMAGE_URI"
-else
-  echo "❌ Missing producer ECR image URI — cannot destroy producers safely"
-  exit 1
-fi
 
 
 
@@ -79,50 +69,24 @@ destroy_stack "consumers"
 destroy_stack "producers"
 
 
-if [[ -f "scripts/runtime/producer-ecr-image-uri" ]]; then
-    IMAGE_TAG="${ECR_IMAGE_URI##*:}"
-    echo "Loaded image for cleanup: $ECR_IMAGE_URI"
-    aws ecr batch-delete-image \
-      --repository-name "$ECR_REPO_NAME" \
-      --image-ids imageTag="$IMAGE_TAG" \
-      --region "$AWS_REGION" || true
-else
-    echo "No runtime ECR image state found — skipping image cleanup."
-fi
-echo "🗑️  Cleaning up ECR repository..."
 
+# Destroying the ECR repository
+echo "🗑️  Cleaning up ECR repository..."
 if aws ecr describe-repositories \
     --repository-names "$ECR_REPO_NAME" \
     --region "$AWS_REGION" >/dev/null 2>&1; then
 
-  echo "ECR repository found: $ECR_REPO_NAME"
+  echo "Deleting ECR repository: $ECR_REPO_NAME"
 
-  IMAGE_DIGESTS=$(aws ecr list-images \
-    --repository-name "$ECR_REPO_NAME" \
-    --region "$AWS_REGION" \
-    --query 'imageIds[*].imageDigest' \
-    --output text)
-
-  if [[ -n "$IMAGE_DIGESTS" ]]; then
-    echo "Deleting images from ECR..."
-    aws ecr batch-delete-image \
-      --repository-name "$ECR_REPO_NAME" \
-      --region "$AWS_REGION" \
-      --image-ids $(printf 'imageDigest=%s ' $IMAGE_DIGESTS) \
-      || true
-  else
-    echo "No images found in ECR repository."
-  fi
-
-  echo "Deleting ECR repository..."
   aws ecr delete-repository \
     --repository-name "$ECR_REPO_NAME" \
     --region "$AWS_REGION" \
-    --force \
-    || true
+    --force || true
+
 else
   echo "ECR repository does not exist — skipping."
 fi
+
 
 
 destroy_stack "data-streaming"
