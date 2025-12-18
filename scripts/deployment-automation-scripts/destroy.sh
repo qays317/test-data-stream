@@ -66,6 +66,16 @@ aws s3 rm s3://$ATHENA_RESULTS_BUCKET_NAME --recursive --quiet || echo "Athena r
 
 destroy_stack "analytics"
 destroy_stack "consumers"
+
+
+if [[ -f "scripts/runtime/producer-ecr-image-uri" ]]; then
+  ECR_IMAGE_URI=$(cat scripts/runtime/producer-ecr-image-uri)
+  STACK_VARS["producers"]+=" -var ecr_image_uri=$ECR_IMAGE_URI"
+else
+  echo "❌ Missing producer ECR image URI — cannot destroy producers safely"
+  exit 1
+fi
+
 destroy_stack "producers"
 
 
